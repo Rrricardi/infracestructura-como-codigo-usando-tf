@@ -1,0 +1,57 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches: [ "dev", "staging", "prod" ]
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    # Determina el ambiente según la rama
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine environment and tfvars file
+        id: env
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          case "$BRANCH" in
+            "dev")
+              echo "environment=dev" >> $GITHUB_ENV
+              echo "tfvars_file=environments/dev/dev.tfvars" >> $GITHUB_ENV
+              ;;
+            "staging")
+              echo "environment=staging" >> $GITHUB_ENV
+              echo "tfvars_file=environments/staging/staging.tfvars" >> $GITHUB_ENV
+              ;;
+            "prod")
+              echo "environment=prod" >> $GITHUB_ENV
+              echo "tfvars_file=environments/prod/prod.tfvars" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "Rama no soportada: $BRANCH"
+              exit 1
+              ;;
+          esac
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan -var-file=$tfvars_file
+
+      - name: Terraform Apply
+        # ⚠️ En producción (main), podrías requerir aprobación manual.
+        # Por ahora, lo hacemos automático para simplicidad.
+        run: terraform apply -auto-approve -var-file=$tfvars_file
+
+      - name: Show deployed environment
+        run: echo "✅ Infraestructura desplegada en ambiente: $environment"
