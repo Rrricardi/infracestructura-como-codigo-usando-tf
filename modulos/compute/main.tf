@@ -1,97 +1,143 @@
-resource "aws_vpc" "this" {
-  cidr_block           = var.cidr_block
-  enable_dns_support   = true
-  enable_dns_hostnames = true
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+
+  owners = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+}
+
+resource "aws_security_group" "alb" {
+  name        = "sg-alb-${var.environment}"
+  description = "Access to ALB"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "HTTP from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "app" {
+  name        = "sg-app-${var.environment}"
+  description = "Access to app instances from ALB"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description     = "HTTP from ALB"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# Permitir que la app acceda a la DB (regla en el SG de DB)
+resource "aws_security_group_rule" "app_to_db" {
+  type                     = "ingress"
+  from_port                = 3306
+  to_port                  = 3306
+  protocol                 = "tcp"
+  security_group_id        = var.db_security_group_id
+  source_security_group_id = aws_security_group.app.id
+}
+
+resource "aws_lb" "this" {
+  name               = "alb-${var.environment}"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = var.public_subnet_ids
 
   tags = {
-    Name = "${var.name}-vpc"
+    Name        = "alb-${var.environment}"
+    Environment = var.environment
   }
 }
 
-resource "aws_internet_gateway" "this" {
-  vpc_id = aws_vpc.this.id
+resource "aws_lb_target_group" "this" {
+  name     = "tg-${var.environment}"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = var.vpc_id
 
-  tags = {
-    Name = "${var.name}-igw"
-  }
-}
-
-resource "aws_subnet" "public" {
-  count = length(var.public_subnet_cidrs)
-
-  vpc_id                  = aws_vpc.this.id
-  cidr_block              = var.public_subnet_cidrs[count.index]
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "${var.name}-public-${count.index}"
-    Tier = "public"
-  }
-}
-
-resource "aws_subnet" "private" {
-  count = length(var.private_subnet_cidrs)
-
-  vpc_id     = aws_vpc.this.id
-  cidr_block = var.private_subnet_cidrs[count.index]
-
-  tags = {
-    Name = "${var.name}-private-${count.index}"
-    Tier = "private"
-  }
-}
-
-resource "aws_eip" "nat" {
-  vpc = true
-
-  tags = {
-    Name = "${var.name}-nat-eip"
-  }
-}
-
-resource "aws_nat_gateway" "this" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public[0].id
-
-  tags = {
-    Name = "${var.name}-nat"
-  }
-}
-
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.this.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.this.id
+  health_check {
+    path = "/"
   }
 
   tags = {
-    Name = "${var.name}-public-rt"
+    Environment = var.environment
   }
 }
 
-resource "aws_route_table_association" "public" {
-  count          = length(aws_subnet.public)
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
-}
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.this.arn
+  port              = 80
+  protocol          = "HTTP"
 
-resource "aws_route_table" "private" {
-  vpc_id = aws_vpc.this.id
-
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.this.id
-  }
-
-  tags = {
-    Name = "${var.name}-private-rt"
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this.arn
   }
 }
 
-resource "aws_route_table_association" "private" {
-  count          = length(aws_subnet.private)
-  subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private.id
+resource "aws_launch_template" "app" {
+  name_prefix   = "lt-app-${var.environment}-"
+  image_id      = data.aws_ami.amazon_linux.id
+  instance_type = var.instance_type
+
+  network_interfaces {
+    security_groups = [aws_security_group.app.id]
+  }
+
+  user_data = base64encode(<<-EOF
+              #!/bin/bash
+              yum update -y
+              yum install -y httpd
+              systemctl enable httpd
+              systemctl start httpd
+              echo "Hello from ${var.environment}" > /var/www/html/index.html
+              EOF
+  )
+}
+
+resource "aws_autoscaling_group" "app" {
+  name                      = "asg-app-${var.environment}"
+  max_size                  = var.max_size
+  min_size                  = var.min_size
+  desired_capacity          = var.desired_capacity
+  vpc_zone_identifier       = var.private_subnet_ids
+  health_check_type         = "EC2"
+
+  launch_template {
+    id      = aws_launch_template.app.id
+    version = "$Latest"
+  }
+
+  target_group_arns = [aws_lb_target_group.this.arn]
+
+  tag {
+    key                 = "Name"
+    value               = "app-${var.environment}"
+    propagate_at_launch = true
+  }
 }
