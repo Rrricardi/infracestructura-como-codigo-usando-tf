@@ -18,12 +18,13 @@ desired_capacity = 1
 min_size         = 1
 max_size         = 2
 
-db_instance_class       = "db.t3.micro"
-db_engine               = "mysql"
-db_engine_version       = "8.0"
-db_allocated_storage    = 20
-db_name                 = "appdb"
-db_username             = "admin"
+db_instance_class        = "db.t3.micro"
+db_engine                = "mysql"
+db_engine_version        = "8.0"
+db_allocated_storage     = 20
+db_name                  = "appdb"
+db_username              = "admin"
 db_password_ssm_parameter = "/dev/app/db/password"
 
-app_bucket_name = "mi-bucket-app-dev-UNICO"
+app_bucket_name = "mi-app-bucket-dev-1234"
+
