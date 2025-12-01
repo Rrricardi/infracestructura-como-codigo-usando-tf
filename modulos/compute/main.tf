@@ -10,7 +10,7 @@ data "aws_ami" "amazon_linux" {
 }
 
 resource "aws_security_group" "alb" {
-  name        = "sg-alb-${var.environment}"
+  name        = "alb-sg-${var.environment}"
   description = "Access to ALB"
   vpc_id      = var.vpc_id
 
@@ -31,7 +31,7 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_security_group" "app" {
-  name        = "sg-app-${var.environment}"
+  name        = "app-sg-${var.environment}"
   description = "Access to app instances from ALB"
   vpc_id      = var.vpc_id
 
@@ -121,7 +121,7 @@ resource "aws_launch_template" "app" {
 }
 
 resource "aws_autoscaling_group" "app" {
-  name                      = "asg-app-${var.environment}"
+  name                      = "app-sg-${var.environment}"
   max_size                  = var.max_size
   min_size                  = var.min_size
   desired_capacity          = var.desired_capacity
@@ -141,3 +141,5 @@ resource "aws_autoscaling_group" "app" {
     propagate_at_launch = true
   }
 }
+
+
