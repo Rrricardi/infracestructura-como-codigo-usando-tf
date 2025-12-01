@@ -1,1 +1,0 @@
-{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"compute","Source":"./modules/compute","Dir":""},{"Key":"db","Source":"./modules/db","Dir":""},{"Key":"storage","Source":"./modules/storage","Dir":""},{"Key":"vpc","Source":"./modules/vpc","Dir":""}]}
