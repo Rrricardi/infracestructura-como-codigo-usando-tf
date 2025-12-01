@@ -54,4 +54,4 @@ jobs:
         run: terraform apply -auto-approve -var-file=$tfvars_file
 
       - name: Show deployed environment
-        run: echo "✅ Infraestructura desplegada en ambiente: $environment"
+        run: echo " Infraestructura desplegada en ambiente: $environment"
