@@ -28,3 +28,4 @@ db_password_ssm_parameter = "/dev/app/db/password"
 
 app_bucket_name = "mi-app-bucket-dev-1234"
 
+
